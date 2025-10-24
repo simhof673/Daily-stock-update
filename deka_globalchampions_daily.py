@@ -54,7 +54,7 @@ def fetch_latest():
 
     def parse_price(s):
         s = s.replace("€","").replace("EUR","").replace("\xa0"," ")
-        s = s.replace(".","").replace(" ","")
+        s = s.replace(".","").replace(" ","").replace(",",".")
         try:
             return float(s)
         except:
