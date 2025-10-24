@@ -106,6 +106,7 @@ def append_csv(row_date, row_price):
     with open(CSV, "a", encoding="utf-8", newline="") as f:
         if header_needed:
             f.write("Datum,Kurs\n")
+            f.write("Datum;Kurs\n")
         f.write(f"{row_date.isoformat()},{row_price}\n")
     print(f"Append OK: {row_date} -> {row_price}")
     return True
