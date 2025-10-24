@@ -1,101 +1,41 @@
-# -*- coding: utf-8 -*-
-# deka_globalchampions_daily.py
-# Ziel: TÄGLICH nur den neuesten verfügbaren Schlusskurs (Datum,Kurs) anhängen.
-# Dateien: fund_history.csv (Append), fund_history.xlsx (optional für Excel)
-# Quelle: MarketScreener (DE000DK0ECU8)
+name: Update DE000DK0ECU8 daily
 
-import os
-import sys
-import datetime as dt
-from pathlib import Path
+on:
+  schedule:
+    - cron: "30 16 * * *"   # läuft täglich 16:30 UTC (~18:30 Europa/Berlin)
+  workflow_dispatch:
 
-import pandas as pd
-import requests
-from bs4 import BeautifulSoup
+permissions:
+  contents: write
 
-URL = "https://de.marketscreener.com/kurs/fond/DEKA-GLOBALCHAMPIONS-52081469/"
-ROOT = Path(os.environ.get("GITHUB_WORKSPACE", ".")).resolve()
-CSV  = ROOT / "fund_history.csv"
-XLSX = ROOT / "fund_history.xlsx"SHEET = "Kurse"
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-def fetch_latest():
-    # Holt die HTML-Seite und extrahiert (Datum, Kurs) des jüngsten Schlusskurses.
-    r = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-    r.raise_for_status()
-    soup = BeautifulSoup(r.text, "lxml")
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    # Tabelle mit Spalten "Datum" und "Kurs" finden
-    tables = soup.find_all("table")
-    candidate = None
-    for t in tables:
-        heads = [th.get_text(strip=True).lower() for th in t.find_all("th")]
-        h = "|".join(heads)
-        if "datum" in h and ("kurs" in h or "schluss" in h):
-            candidate = t
-            break
-    if candidate is None:
-        if tables:
-            candidate = tables[0]
-        else:
-            raise RuntimeError("Keine Tabelle auf der Seite gefunden.")
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas requests lxml beautifulsoup4 openpyxl
 
-    rows = []
-    for tr in candidate.find_all("tr"):
-        cells = [c.get_text(strip=True) for c in tr.find_all(["td", "th"])]
-        if len(cells) >= 2 and cells[0].strip().lower() != "datum":
-            rows.append(cells[:2])  # Datum, Kurs
+      - name: Run updater
+        run: python deka_globalchampions_daily.py
 
-    if not rows:
-        raise RuntimeError("Keine Kurszeilen gefunden.")
-
-    def parse_date(s):
-        s = s.strip()
-        for fmt in ("%d.%m.%Y", "%d.%m.%y"):
-            try:
-                return dt.datetime.strptime(s, fmt).date()
-            except ValueError:
-                pass
-        d = pd.to_datetime(s, dayfirst=True, errors="coerce")
-        return d.date() if not pd.isna(d) else None
-
-    def parse_price(s):
-        s = s.replace("€", "").replace("EUR", "").replace("\xa0", " ")
-        s = s.replace(".", "").replace(" ", "").replace(",", ".")
-        try:
-            return float(s)
-        except Exception:
-            return None
-
-    df = pd.DataFrame(rows, columns=["Datum", "Kurs"])
-    df["Datum"] = df["Datum"].apply(parse_date)
-    df["Kurs"] = df["Kurs"].apply(parse_price)
-    df = df.dropna(subset=["Datum", "Kurs"]).sort_values("Datum")
-    if df.empty:
-        raise RuntimeError("Parser ergab keine validen Werte.")
-
-    latest = df.iloc[-1]
-    return latest["Datum"], float(latest["Kurs"])
-
-def load_last_csv_date():
-    # Jüngstes Datum aus CSV (falls vorhanden)
-    if not CSV.exists():
-        return None
-    try:
-        d = pd.read_csv(CSV)
-        if d.empty or "Datum" not in d.columns:
-            return None
-        d["Datum"] = pd.to_datetime(d["Datum"]).dt.date
-        return d["Datum"].max()
-    except Exception:
-        return None
-
-def append_csv(row_date, row_price):
-    # Hängt (Datum,Kurs) an – nur wenn Datum noch nicht existiert.
-    exists = False
-    if CSV.exists():
-        try:
-            d = pd.read_csv(CSV)
-            if not d.empty:
-                d["Datum"] = pd.to_datetime(d["Datum"]).dt.date
-                exists = (d["Datum"] == row_date).any()
-        except Exception:
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Daily update"
+            git push
+          fi
