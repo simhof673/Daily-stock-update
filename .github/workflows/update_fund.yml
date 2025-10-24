@@ -14,9 +14,9 @@ import requests
 from bs4 import BeautifulSoup
 
 URL = "https://de.marketscreener.com/kurs/fond/DEKA-GLOBALCHAMPIONS-52081469/"
-CSV = Path("fund_history.csv")
-XLSX = Path("fund_history.xlsx")
-SHEET = "Kurse"
+ROOT = Path(os.environ.get("GITHUB_WORKSPACE", ".")).resolve()
+CSV  = ROOT / "fund_history.csv"
+XLSX = ROOT / "fund_history.xlsx"SHEET = "Kurse"
 
 def fetch_latest():
     # Holt die HTML-Seite und extrahiert (Datum, Kurs) des jüngsten Schlusskurses.
