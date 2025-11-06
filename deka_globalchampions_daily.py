@@ -10,7 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 
 URL = "https://de.marketscreener.com/kurs/fond/DEKA-GLOBALCHAMPIONS-52081469/"
-CSV = Path("fund_history.csv")
+CSV = Path("deka_globalchampions.csv")
 XLSX = Path("fund_history.xlsx")
 SHEET = "Kurse"
 
