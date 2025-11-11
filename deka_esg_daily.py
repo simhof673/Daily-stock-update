@@ -10,7 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 
 URL = "https://de.marketscreener.com/kurs/fond/DEKA-ESG-RENTEN-CF-EUR-DI-178540687/"
-CSV = Path("deka_globalchampions.csv")
+CSV = Path("deka_esg.csv")
 XLSX = Path("fund_history.xlsx")
 SHEET = "Kurse"
 
@@ -137,4 +137,5 @@ def main():
         print(f"Nichts zu tun: CSV hat bereits {last_csv_date} (>= Web {latest_date}).")
 
 if __name__ == "__main__":
+
     main()
