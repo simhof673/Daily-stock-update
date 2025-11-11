@@ -10,7 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 
 URL = "https://www.fondscheck.de/pfalz_invest_nachhaltigkeit-fonds-historisch?boerse_id=208"  # Fondsgesellschaft
-CSV = Path("fund_history.csv")
+CSV = Path("deka_pfalzinvest.csv")
 XLSX = Path("fund_history.xlsx")
 SHEET = "Kurse"
 
@@ -136,3 +136,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
