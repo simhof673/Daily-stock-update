@@ -1,4 +1,4 @@
-name: Update DE000DK0ECU8 daily
+name: Update stocks daily
 
 on:
   schedule:
