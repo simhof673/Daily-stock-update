@@ -26,7 +26,9 @@ jobs:
           pip install pandas requests lxml beautifulsoup4 openpyxl
 
       - name: Run updater
-        run: python deka_globalchampions_daily.py
+        run: |
+          python deka_globalchampions_daily.py
+          python deka_esg_daily.py
 
       - name: Commit & push if changed
         run: |
