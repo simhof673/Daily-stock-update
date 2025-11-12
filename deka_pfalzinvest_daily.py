@@ -1,7 +1,7 @@
 # pfalzinvest_daily.py
 # Ziel: TÄGLICH nur den neuesten verfügbaren Schlusskurs (Datum,Kurs) ANHÄNGEN.
-# Dateien: fund_history.csv (Append), fund_history.xlsx (für Excel-Nutzer)
-# Quelle: Fondscheck "Historische Kurse (Fondsgesellschaft)" (DE000A2PR6U0)
+# Dateien: deka_pfalzinvest.csv (Append), fund_history.xlsx (für Excel-Nutzer)
+# Quelle: Fondscheck "Pfalz Invest Nachhaltigkeit" (Übersichtsseite, Fondsgesellschaft-Zeile)
 
 import os, sys, datetime as dt
 from pathlib import Path
@@ -9,40 +9,70 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-URL = "https://www.fondscheck.de/pfalz_invest_nachhaltigkeit-fonds-historisch?boerse_id=208"  # Fondsgesellschaft
+URL = "https://www.fondscheck.de/pfalz_invest_nachhaltigkeit-fonds"  # Übersichtsseite
 CSV = Path("deka_pfalzinvest.csv")
 XLSX = Path("fund_history.xlsx")
 SHEET = "Kurse"
 
 def fetch_latest():
-    """Liest die Seite und gibt (datum, kurs) des jüngsten verfügbaren Schlusskurses zurück."""
+    """Liest die Seite und gibt (datum, kurs) des jüngsten verfügbaren Schlusskurses (Fondsgesellschaft) zurück."""
     r = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "lxml")
 
-    # Tabelle mit "Datum" und "Kurs"/"Schluss" finden
-    tables = soup.find_all("table")
-    cand = None
-    for t in tables:
-        heads = [th.get_text(strip=True).lower() for th in t.find_all("th")]
-        header_text = "|".join(heads)
-        if "datum" in header_text and ("kurs" in header_text or "schluss" in header_text):
-            cand = t
-            break
-    if cand is None and tables:
-        cand = tables[0]
-    if cand is None:
-        raise RuntimeError("Keine Tabelle gefunden.")
+    # 1) Zeile finden, die "Fondsgesellschaft" enthält (unter 'Kurs (Fondsgesellschaft)')
+    fg_row = None
+    for tr in soup.find_all("tr"):
+        text = tr.get_text(separator=" ", strip=True).lower()
+        if "fondsgesellschaft" in text:
+            tds = tr.find_all(["td","th"])
+            # Erwartete Struktur: [Handelsplatz, Letzter, Vortag, Veränderung, Zeit]
+            if len(tds) >= 5:
+                fg_row = [td.get_text(strip=True) for td in tds]
+                break
 
-    rows = []
-    for tr in cand.find_all("tr"):
-        cells = [c.get_text(strip=True) for c in tr.find_all(["td","th"])]
-        if len(cells) >= 2 and cells[0].strip().lower() != "datum":
-            # Fondscheck hat die Spalte 'Schluss' – wir nehmen die zweite Zelle
-            rows.append(cells[:2])  # Datum, Kurs/Schluss
+    if not fg_row:
+        # Fallback: Versuche die "Letzter/Vortag"-Zeile darüber (ohne Datum) + irgendeine Datumsangabe im Umfeld
+        # (robust, falls sich das Markup ändert)
+        # Suche zuerst einen offensichtlichen Preis wie "52,09 €"
+        price_candidate = None
+        for el in soup.find_all(text=True):
+            s = (el or "").strip()
+            # Euroformat mit Komma und optionalem Tausenderpunkt
+            if s.endswith("€") and any(ch.isdigit() for ch in s):
+                price_candidate = s
+                break
+        # Datum irgendwo als dd.mm.yy oder dd.mm.yyyy
+        date_candidate = None
+        for el in soup.find_all(text=True):
+            s = (el or "").strip()
+            if any(c.isdigit() for c in s) and "." in s:
+                for fmt in ("%d.%m.%Y", "%d.%m.%y"):
+                    try:
+                        dt.datetime.strptime(s, fmt)
+                        date_candidate = s
+                        break
+                    except Exception:
+                        pass
+                if date_candidate:
+                    break
+        if price_candidate and date_candidate:
+            fg_row = ["", price_candidate, "", "", date_candidate]
 
-    if not rows:
-        raise RuntimeError("Keine Kurszeilen gefunden.")
+    if not fg_row:
+        raise RuntimeError("Konnte die 'Fondsgesellschaft'-Zeile nicht finden.")
+
+    # 2) Preis (Spalte 'Letzter') und Datum (Spalte 'Zeit') extrahieren
+    letzter_str = fg_row[1]
+    datum_str   = fg_row[-1]
+
+    def parse_price(s):
+        s = s.replace("€", "").replace("EUR", "").replace("\xa0"," ")
+        s = s.replace(".", "").replace(" ", "").replace(",", ".")
+        try:
+            return float(s)
+        except Exception:
+            return None
 
     def parse_date(s):
         s = s.strip()
@@ -51,26 +81,17 @@ def fetch_latest():
                 return dt.datetime.strptime(s, fmt).date()
             except ValueError:
                 pass
-        # Fallback
-        return pd.to_datetime(s, dayfirst=True, errors="coerce").date()
+        # Fallback: pandas
+        d = pd.to_datetime(s, dayfirst=True, errors="coerce")
+        return None if pd.isna(d) else d.date()
 
-    def parse_price(s):
-        s = s.replace("€","").replace("EUR","").replace("\xa0"," ")
-        s = s.replace(".","").replace(" ","").replace(",",".")
-        try:
-            return float(s)
-        except:
-            return None
+    price = parse_price(letzter_str)
+    date  = parse_date(datum_str)
 
-    df = pd.DataFrame(rows, columns=["Datum","Kurs"])
-    df["Datum"] = df["Datum"].apply(parse_date)
-    df["Kurs"]  = df["Kurs"].apply(parse_price)
-    df = df.dropna(subset=["Datum","Kurs"]).sort_values("Datum")
-    if df.empty:
-        raise RuntimeError("Parser ergab keine validen Werte.")
+    if price is None or date is None:
+        raise RuntimeError(f"Ungültige Werte geparst: Preis='{letzter_str}', Datum='{datum_str}'.")
 
-    latest = df.iloc[-1]
-    return latest["Datum"], float(latest["Kurs"])
+    return date, float(price)
 
 def load_last_csv_date():
     """Liest das jüngste Datum aus der CSV (falls vorhanden)."""
@@ -136,4 +157,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
