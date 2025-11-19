@@ -13,7 +13,7 @@ import requests
 
 # Stooq: tägliche Kurse für BASF (XETRA), Symbol BAS.DE
 URL = "https://stooq.com/q/d/l/?s=bas.de&i=d"
-CSV = Path("BASF.csv")
+CSV = Path("basf.csv")
 
 
 def fetch_latest():
