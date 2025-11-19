@@ -30,6 +30,7 @@ jobs:
           python deka_globalchampions_daily.py
           python deka_esg_daily.py
           python deka_pfalzinvest_daily.py
+          python basf_daily.py
 
       - name: Commit & push if changed
         run: |
